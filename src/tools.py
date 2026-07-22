@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import re
 import urllib.parse as urlparse
 import hashlib
 import requests
@@ -11,10 +12,37 @@ from google import genai
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+YOUTUBE_VIDEO_ID_RE = re.compile(
+    r"(?:youtube\.com/(?:watch\?[^ ]*?v=|embed/|v/|live/|shorts/)|youtu\.be/)([A-Za-z0-9_-]{11})"
+)
+
+def sanitize_youtube_url(url: str) -> str:
+    """
+    Normalizes noisy model-generated YouTube URLs into a clean watch URL.
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("A non-empty YouTube video URL is required.")
+
+    match = YOUTUBE_VIDEO_ID_RE.search(url.strip())
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+
+    parsed = urlparse.urlparse(url.strip().strip("[]'\"{}()"))
+    if parsed.hostname in ('youtube.com', 'www.youtube.com', 'm.youtube.com') and parsed.path == '/watch':
+        video_id = urlparse.parse_qs(parsed.query).get('v', [None])[0]
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id[:11]}"
+
+    raise ValueError(f"Could not extract a valid YouTube video ID from: {url}")
+
 def extract_video_id(url: str) -> str:
     """
     Extracts the video ID from a YouTube URL.
     """
+    try:
+        url = sanitize_youtube_url(url)
+    except ValueError:
+        pass
     try:
         parsed = urlparse.urlparse(url)
         if parsed.hostname in ('youtu.be', 'www.youtu.be'):
@@ -35,10 +63,46 @@ def extract_video_id(url: str) -> str:
     # Fallback to MD5 hash if extraction fails
     return hashlib.md5(url.encode()).hexdigest()[:11]
 
+def _can_download_audio(video_url: str) -> tuple[bool, str]:
+    """
+    Checks whether yt-dlp can access audio metadata without downloading it.
+    This filters out DRM/private/unavailable videos before the agent transcribes.
+    """
+    ydl_opts = {
+        'format': 'm4a/bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'noplaylist': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web_embedded', 'web', 'tv', 'android_sdkless']
+            }
+        }
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+    except Exception as e:
+        return False, str(e)
+
+    if info.get("is_live"):
+        return False, "Live videos are skipped because their transcript is unstable."
+    if info.get("live_status") in {"is_live", "is_upcoming"}:
+        return False, "Live or upcoming videos are skipped."
+
+    formats = info.get("formats") or []
+    has_audio = any(fmt.get("acodec") and fmt.get("acodec") != "none" for fmt in formats)
+    if not has_audio:
+        return False, "No downloadable audio format was found."
+
+    return True, ""
+
 def video_search_tool(query: str) -> str:
     """
     Calls SerpApi to get a YouTube video link based on a query.
-    Returns the first video's URL.
+    Returns the first downloadable, non-DRM video's URL.
     """
     api_key = os.getenv("SERPAPI_API_KEY")
     if not api_key:
@@ -64,13 +128,32 @@ def video_search_tool(query: str) -> str:
     if not video_results:
         raise ValueError(f"No video results found on YouTube for query: '{query}'")
         
+    skipped = []
     for result in video_results:
         video_url = result.get("link")
-        if video_url:
-            logger.info(f"Found YouTube video: {video_url}")
-            return video_url
-            
-    raise ValueError("No video results with a valid link were found.")
+        if not video_url:
+            continue
+
+        try:
+            clean_url = sanitize_youtube_url(video_url)
+        except ValueError as e:
+            skipped.append(f"{video_url}: {e}")
+            continue
+
+        can_download, reason = _can_download_audio(clean_url)
+        if can_download:
+            logger.info(f"Found downloadable YouTube video: {clean_url}")
+            return clean_url
+
+        title = result.get("title", clean_url)
+        logger.info(f"Skipping unavailable video '{title}': {reason}")
+        skipped.append(f"{title}: {reason}")
+
+    details = "; ".join(skipped[:3])
+    raise ValueError(
+        "No downloadable non-DRM YouTube video results were found for this query."
+        + (f" Skipped examples: {details}" if details else "")
+    )
 
 def transcription_tool(video_url: str) -> str:
     """
@@ -79,6 +162,7 @@ def transcription_tool(video_url: str) -> str:
     Returns a status message with the saved file path.
     """
     # 1. Setup paths
+    video_url = sanitize_youtube_url(video_url)
     video_id = extract_video_id(video_url)
     os.makedirs("transcripts", exist_ok=True)
     transcript_path = os.path.join("transcripts", f"{video_id}.txt")

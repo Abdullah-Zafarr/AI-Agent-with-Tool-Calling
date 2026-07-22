@@ -66,5 +66,42 @@ class TestAIAgent(unittest.TestCase):
         # Verify generate_content was called 3 times
         self.assertEqual(mock_client_instance.models.generate_content.call_count, 3)
 
+    def test_sanitize_youtube_url_cleans_model_noise(self):
+        noisy_url = "[https://www.youtube.com/watch?v=e9lnsKot_SQ'}](https://www.youtube.com/watch?v=e9lnsKot_SQ%27%7D)"
+
+        clean_url = tools.sanitize_youtube_url(noisy_url)
+
+        self.assertEqual(clean_url, "https://www.youtube.com/watch?v=e9lnsKot_SQ")
+        self.assertEqual(tools.extract_video_id(noisy_url), "e9lnsKot_SQ")
+
+    @patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-serpapi-key"})
+    @patch('src.tools._can_download_audio')
+    @patch('src.tools.requests.get')
+    def test_video_search_skips_unavailable_results(self, mock_get, mock_can_download):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "video_results": [
+                {
+                    "title": "DRM video",
+                    "link": "https://www.youtube.com/watch?v=e9lnsKot_SQ",
+                },
+                {
+                    "title": "Downloadable video",
+                    "link": "https://www.youtube.com/watch?v=2ReR1YJrNOM",
+                },
+            ]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        mock_can_download.side_effect = [
+            (False, "This video is DRM protected"),
+            (True, ""),
+        ]
+
+        result = tools.video_search_tool("git commit short explanation")
+
+        self.assertEqual(result, "https://www.youtube.com/watch?v=2ReR1YJrNOM")
+        self.assertEqual(mock_can_download.call_count, 2)
+
 if __name__ == '__main__':
     unittest.main()
