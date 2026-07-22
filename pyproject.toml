@@ -10,5 +10,6 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
     "streamlit>=1.60.0",
+    "youtube-transcript-api>=1.2.4",
     "yt-dlp>=2026.7.4",
 ]

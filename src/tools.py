@@ -76,7 +76,6 @@ def _can_download_audio(video_url: str) -> tuple[bool, str]:
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     try:
@@ -171,6 +170,21 @@ def transcription_tool(video_url: str) -> str:
         with open(transcript_path, "r", encoding="utf-8") as f:
             return f.read()
 
+    # 1.5 Try fetching native YouTube closed captions before downloading audio
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        logger.info(f"Attempting to fetch native YouTube transcript for {video_id}...")
+        api = YouTubeTranscriptApi()
+        transcript_list = api.fetch(video_id)
+        transcript_text = " ".join([t.text for t in transcript_list if hasattr(t, 'text')])
+        if transcript_text:
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write(transcript_text)
+            logger.info("Native transcript fetched natively without audio download!")
+            return transcript_text
+    except Exception as e:
+        logger.info(f"Native transcription unavailable: {e}. Falling back to AI audio transcription.")
+
     # 2. Download audio using yt-dlp (with retry)
     logger.info(f"Downloading audio from: {video_url}")
     import tempfile
@@ -182,7 +196,6 @@ def transcription_tool(video_url: str) -> str:
         'outtmpl': output_template,
         'quiet': False,
         'no_warnings': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     local_file = None
