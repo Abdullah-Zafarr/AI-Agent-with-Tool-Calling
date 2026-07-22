@@ -378,7 +378,7 @@ st.markdown('<div class="section-desc">Describe a video topic. The agent will se
 # Full-width tall textarea
 query_input = st.text_area(
     "Query",
-    value="Find a short video explaining git commits and transcribe it.",
+    value="Find a short video explaining python hello world and transcribe it.",
     height=200,
     label_visibility="collapsed"
 )

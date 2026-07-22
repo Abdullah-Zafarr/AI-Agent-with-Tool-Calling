@@ -76,6 +76,7 @@ def _can_download_audio(video_url: str) -> tuple[bool, str]:
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     try:
@@ -181,6 +182,7 @@ def transcription_tool(video_url: str) -> str:
         'outtmpl': output_template,
         'quiet': False,
         'no_warnings': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     local_file = None
