@@ -67,18 +67,15 @@ def _can_download_audio(video_url: str) -> tuple[bool, str]:
     """
     Checks whether yt-dlp can access audio metadata without downloading it.
     This filters out DRM/private/unavailable videos before the agent transcribes.
+    Uses default yt-dlp client selection to avoid false DRM positives caused
+    by restrictive player_client configurations.
     """
     ydl_opts = {
-        'format': 'm4a/bestaudio/best',
+        'format': 'bestaudio/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web_embedded', 'web', 'tv', 'android_sdkless']
-            }
-        }
     }
 
     try:
@@ -180,15 +177,10 @@ def transcription_tool(video_url: str) -> str:
     output_template = os.path.join(temp_dir, f'youtube_{video_id}_temp.%(ext)s')
     
     ydl_opts = {
-        'format': 'm4a/bestaudio/best',
+        'format': 'bestaudio/best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web_embedded', 'web', 'tv', 'android_sdkless']
-            }
-        }
     }
     
     local_file = None
