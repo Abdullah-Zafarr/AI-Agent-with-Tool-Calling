@@ -177,9 +177,9 @@ def transcription_tool(video_url: str) -> str:
     output_template = os.path.join(temp_dir, f'youtube_{video_id}_temp.%(ext)s')
     
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'm4a/bestaudio[ext=m4a]/bestaudio/best',
         'outtmpl': output_template,
-        'quiet': True,
+        'quiet': False,
         'no_warnings': True,
     }
     
@@ -244,8 +244,19 @@ def transcription_tool(video_url: str) -> str:
                     model=model_name,
                     contents=[uploaded_file, prompt]
                 )
-                logger.info(f"Transcription successful using model: {model_name}")
-                break
+                if response.text:
+                    logger.info(f"Transcription successful using model: {model_name} ({len(response.text)} chars)")
+                    break
+                else:
+                    # Log finish reason for debugging
+                    reason = None
+                    try:
+                        reason = response.candidates[0].finish_reason if response.candidates else "unknown"
+                    except Exception:
+                        pass
+                    logger.warning(f"Model {model_name} returned empty transcript. Finish reason: {reason}")
+                    last_error = ValueError(f"Empty transcript returned by {model_name}. Finish reason: {reason}")
+                    response = None
             except Exception as e:
                 logger.warning(f"Model {model_name} failed: {e}")
                 last_error = e
