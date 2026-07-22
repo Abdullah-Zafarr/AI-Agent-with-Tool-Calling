@@ -8,8 +8,6 @@
 A practice-based AI Agent project implementing multi-tool calling. The agent utilizes **SerpApi** to search YouTube for videos, and a **Google Gemini Multimodal** transcription tool to extract and store speech-to-text transcripts locally. 
 
 ![Interactive Interface](image/interface.PNG)
-
-![Agent Output](image/output.PNG)
 Features a beautiful interactive Streamlit local web interface alongside a Python Command Line Interface.
 
 ---
