@@ -64,36 +64,7 @@ def extract_video_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:11]
 
 def _can_download_audio(video_url: str) -> tuple[bool, str]:
-    """
-    Checks whether yt-dlp can access audio metadata without downloading it.
-    This filters out DRM/private/unavailable videos before the agent transcribes.
-    Uses default yt-dlp client selection to avoid false DRM positives caused
-    by restrictive player_client configurations.
-    """
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'noplaylist': True,
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-    except Exception as e:
-        return False, str(e)
-
-    if info.get("is_live"):
-        return False, "Live videos are skipped because their transcript is unstable."
-    if info.get("live_status") in {"is_live", "is_upcoming"}:
-        return False, "Live or upcoming videos are skipped."
-
-    formats = info.get("formats") or []
-    has_audio = any(fmt.get("acodec") and fmt.get("acodec") != "none" for fmt in formats)
-    if not has_audio:
-        return False, "No downloadable audio format was found."
-
+    # Check disabled as it triggers premature bot blocks on heavy localhost testing.
     return True, ""
 
 def video_search_tool(query: str) -> str:
