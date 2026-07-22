@@ -9,9 +9,11 @@ import src.tools as tools
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-# Import and reload agent to prevent caching of stale function signatures
+# Import and reload tools and agent to prevent caching of stale function signatures
+import src.tools as tools
 import src.agent as agent
 import importlib
+importlib.reload(tools)
 importlib.reload(agent)
 
 st.set_page_config(
