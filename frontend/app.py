@@ -302,7 +302,7 @@ st.sidebar.markdown('<span class="sidebar-label">Model</span>', unsafe_allow_htm
 if provider_option == "Gemini":
     model_option = st.sidebar.selectbox(
         "Gemini Model",
-        options=["gemini-3.1-flash-lite"],
+        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
         index=0,
         label_visibility="collapsed"
     )

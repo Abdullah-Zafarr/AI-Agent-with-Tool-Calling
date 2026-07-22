@@ -242,7 +242,11 @@ def transcription_tool(video_url: str) -> str:
         logger.info(f"File is {uploaded_file.state.name}. Starting transcript generation with Gemini...")
 
         # 4. Transcribe — use models that actually support audio file input
-        model_candidates = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]
+        model_candidates = [
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite"
+        ]
         response = None
         last_error = None
 

@@ -36,7 +36,7 @@ graph TD
 ## ✨ Features
 
 - **Multi-Tool Calling**: Seamless integration where the agent autonomously queries SerpApi for search, retrieves YouTube links, then passes the URL to download and transcribe.
-- **Robust Model Fallbacks**: Automatically falls back sequentially through `gemini-3.5-flash` ➡️ `gemini-3.1-flash` ➡️ `gemini-2.0-flash` to ensure 100% execution compatibility.
+- **Robust Model Fallbacks**: Automatically falls back sequentially through `gemini-3.5-flash` ➡️ `gemini-3.5-flash-lite` ➡️ `gemini-3.1-flash-lite` to ensure 100% execution compatibility.
 - **Sleek Web GUI**: A modular dark-themed Streamlit web interface with status tracking, real-time agent output, embedded video player, and formatted transcript downloads.
 - **Command Line Power**: CLI client (`main.py`) supporting automatic agent providers (both Gemini and Groq).
 - **Safe Resource Cleanup**: Systematically deletes temporary downloaded audio tracks locally and remote Gemini cloud storage assets after completion.

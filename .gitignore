@@ -18,3 +18,7 @@ transcripts/
 *.m4a
 *.wav
 *.mp4
+
+# Logs
+*.log
+streamlit_run.log

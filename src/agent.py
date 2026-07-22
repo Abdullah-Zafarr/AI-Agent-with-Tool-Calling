@@ -27,7 +27,7 @@ def get_tool_function(name: str):
     return None
 
 
-def run_gemini_agent(user_query: str, api_key: str, preferred_model: str = "gemini-3.1-flash-lite"):
+def run_gemini_agent(user_query: str, api_key: str, preferred_model: str = "gemini-3.5-flash"):
     """
     Runs the agent loop using Gemini's native tool calling framework.
     Yields structured dictionary events for UI / CLI logs streaming.
@@ -48,7 +48,7 @@ def run_gemini_agent(user_query: str, api_key: str, preferred_model: str = "gemi
     
     # Arrange candidates so preferred is tried first
     model_candidates = [preferred_model]
-    for m in ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]:
+    for m in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
         if m not in model_candidates:
             model_candidates.append(m)
             
