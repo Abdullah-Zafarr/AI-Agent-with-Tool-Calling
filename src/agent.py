@@ -152,7 +152,19 @@ def run_gemini_agent(user_query: str, api_key: str, preferred_model: str = "gemi
         )
     else:
         yield {"event": "status", "text": "Agent reached max execution turns without self-termination."}
-        
+
+    # If transcription_tool wasn't called successfully in this session but a prior run
+    # already wrote the transcript to disk, surface it.
+    if found_video_url and not saved_transcript_path:
+        try:
+            video_id = tools.extract_video_id(found_video_url)
+            candidate = os.path.join("transcripts", f"{video_id}.txt")
+            if os.path.exists(candidate):
+                saved_transcript_path = candidate
+                logger.info(f"Surfacing cached transcript from disk: {candidate}")
+        except Exception:
+            pass
+
     yield {
         "event": "complete",
         "video_url": found_video_url,
