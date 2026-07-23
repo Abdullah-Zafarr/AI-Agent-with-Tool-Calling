@@ -125,8 +125,8 @@ def video_search_tool(query: str) -> str:
 
 def transcription_tool(video_url: str) -> str:
     """
-    Downloads the audio of a YouTube video, uploads it to the Gemini API,
-    transcribes it, stores the transcript in a text file, and cleans up.
+    Fetches the transcript of a YouTube video using SerpApi.
+    Bypasses YouTube IP-blocks on Streamlit by avoiding direct audio downloads.
     Returns the full transcript text.
     """
     # 1. Setup paths
@@ -141,157 +141,57 @@ def transcription_tool(video_url: str) -> str:
         with open(transcript_path, "r", encoding="utf-8") as f:
             return f.read()
 
-    # 1.5 Try fetching native YouTube closed captions before downloading audio
+    # 1.5 Try fetching native YouTube closed captions using SerpApi
+    serpapi_key = os.getenv("SERPAPI_API_KEY")
+    if not serpapi_key:
+         raise ValueError("SERPAPI_API_KEY environment variable is not set. Please add it to your .env file.")
+
+    logger.info(f"Attempting to fetch transcript for {video_id} using SerpApi...")
+    try:
+        params = {
+            "engine": "youtube_video_transcript",
+            "v": video_id,
+            "api_key": serpapi_key,
+            "lang": "en"
+        }
+        r = requests.get("https://serpapi.com/search", params=params, timeout=30)
+        
+        if r.status_code == 200:
+            data = r.json()
+            transcript_entries = data.get("transcript", [])
+            
+            if transcript_entries:
+                # SerpApi uses 'snippet' key for transcript lines
+                transcript_text = " ".join([entry.get("snippet", "") for entry in transcript_entries]).strip()
+                
+                if transcript_text:
+                    with open(transcript_path, "w", encoding="utf-8") as f:
+                        f.write(transcript_text)
+                    logger.info("Transcript fetched successfully via SerpApi!")
+                    return transcript_text
+                else:
+                    raise ValueError("SerpApi response contained an empty transcript.")
+            else:
+                raise ValueError("No transcript entries found in SerpApi response.")
+        else:
+            raise RuntimeError(f"SerpApi HTTP {r.status_code}: {r.text[:200]}")
+            
+    except Exception as e:
+        logger.warning(f"SerpApi transcript fetch failed: {e}")
+        
+    # 2. Fallback: Try youtube_transcript_api library (might be IP blocked, but worth a shot)
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        logger.info(f"Attempting to fetch native YouTube transcript for {video_id}...")
+        logger.info(f"Attempting fallback to fetch native YouTube transcript for {video_id}...")
         api = YouTubeTranscriptApi()
         transcript_list = api.fetch(video_id)
-        transcript_text = " ".join([t.text for t in transcript_list if hasattr(t, 'text')])
+        transcript_text = " ".join([t.text for t in transcript_list if hasattr(t, 'text')]).strip()
         if transcript_text:
             with open(transcript_path, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
-            logger.info("Native transcript fetched natively without audio download!")
+            logger.info("Native transcript fetched via youtube_transcript_api fallback!")
             return transcript_text
     except Exception as e:
-        logger.info(f"Native transcription unavailable: {e}. Falling back to AI audio transcription.")
-
-    # 2. Download audio using yt-dlp (with retry)
-    logger.info(f"Downloading audio from: {video_url}")
-    import tempfile
-    temp_dir = tempfile.gettempdir()
-    output_template = os.path.join(temp_dir, f'youtube_{video_id}_temp.%(ext)s')
-
-    ydl_opts = {
-        'format': 'm4a/bestaudio[ext=m4a]/bestaudio/best',
-        'outtmpl': output_template,
-        'quiet': False,
-        'no_warnings': True,
-    }
-
-    local_file = None
-    max_download_attempts = 2
-    for attempt in range(1, max_download_attempts + 1):
-        try:
-            if attempt > 1:
-                logger.info(f"Retrying download (attempt {attempt}/{max_download_attempts})...")
-                time.sleep(3)
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(video_url, download=True)
-                candidate_file = ydl.prepare_filename(info_dict)
-                if os.path.exists(candidate_file):
-                    local_file = candidate_file
-                else:
-                    base, _ = os.path.splitext(candidate_file)
-                    for ext in ['.m4a', '.mp3', '.webm', '.wav', '.opus']:
-                        if os.path.exists(base + ext):
-                            local_file = base + ext
-                            break
-            if local_file and os.path.exists(local_file):
-                break
-        except Exception as dl_err:
-            logger.warning(f"Download attempt {attempt} failed: {dl_err}")
-            if attempt == max_download_attempts:
-                raise RuntimeError(f"Audio download failed after {max_download_attempts} attempts: {dl_err}")
-
-    if not local_file or not os.path.exists(local_file):
-        raise FileNotFoundError(f"Failed to find downloaded audio file for: {video_url}")
-
-    logger.info(f"Audio downloaded locally to: {local_file}")
-
-    try:
-        # 3. Upload audio to Gemini API
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set. Please add it to your .env file.")
-
-        client = genai.Client(api_key=gemini_api_key)
-
-        logger.info("Uploading audio file to Gemini...")
-        uploaded_file = client.files.upload(file=local_file)
-        logger.info(f"Uploaded to Gemini. Remote name: {uploaded_file.name}. State: {uploaded_file.state.name}")
-
-        # Wait for file to be processed (max 60 seconds)
-        max_wait_cycles = 12
-        waited = 0
-        while uploaded_file.state.name == "PROCESSING" and waited < max_wait_cycles:
-            logger.info("Gemini is processing the uploaded file. Waiting 5 seconds...")
-            time.sleep(5)
-            waited += 1
-            uploaded_file = client.files.get(name=uploaded_file.name)
-
-        if uploaded_file.state.name == "FAILED":
-            raise RuntimeError("Gemini file processing failed.")
-        if uploaded_file.state.name == "PROCESSING":
-            raise RuntimeError("Gemini file processing timed out after 60 seconds.")
-
-        logger.info(f"File is {uploaded_file.state.name}. Starting transcript generation with Gemini...")
-
-        # 4. Transcribe — use models that actually support audio file input
-        model_candidates = [
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite"
-        ]
-        response = None
-        last_error = None
-
-        prompt = (
-            "Please transcribe the following audio file completely and accurately. "
-            "Ensure you catch all spoken words. Do not insert any commentary or pleasantries, "
-            "just provide the direct transcript."
-        )
-
-        for model_name in model_candidates:
-            try:
-                logger.info(f"Attempting transcription using model: {model_name}...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[uploaded_file, prompt]
-                )
-                if response.text:
-                    logger.info(f"Transcription successful using model: {model_name} ({len(response.text)} chars)")
-                    break
-                else:
-                    reason = None
-                    try:
-                        reason = response.candidates[0].finish_reason if response.candidates else "unknown"
-                    except Exception:
-                        pass
-                    logger.warning(f"Model {model_name} returned empty transcript. Finish reason: {reason}")
-                    last_error = ValueError(f"Empty transcript from {model_name}. Finish reason: {reason}")
-                    response = None
-            except Exception as e:
-                logger.warning(f"Model {model_name} failed: {e}")
-                last_error = e
-
-        if response is None:
-            raise RuntimeError(f"All transcription model candidates failed. Last error: {last_error}")
-
-        transcript_text = response.text
-        if not transcript_text:
-            raise ValueError("Gemini returned an empty transcription response.")
-
-        # 5. Save the transcript to file
-        with open(transcript_path, "w", encoding="utf-8") as f:
-            f.write(transcript_text)
-
-        logger.info(f"Successfully saved transcript to {transcript_path}")
-
-        # Clean up remote Gemini file
-        try:
-            client.files.delete(name=uploaded_file.name)
-            logger.info(f"Cleaned up remote Gemini file: {uploaded_file.name}")
-        except Exception as e:
-            logger.warning(f"Failed to clean up remote Gemini file: {e}")
-
-        return transcript_text
-
-    finally:
-        # Always clean up local audio file
-        if local_file and os.path.exists(local_file):
-            try:
-                os.remove(local_file)
-                logger.info(f"Cleaned up local temporary audio file: {local_file}")
-            except Exception as e:
-                logger.warning(f"Failed to delete local audio file {local_file}: {e}")
+        logger.info(f"Fallback native transcription unavailable: {e}")
+        
+    raise RuntimeError(f"Could not fetch transcript for {video_url} via SerpApi or youtube_transcript_api.")
